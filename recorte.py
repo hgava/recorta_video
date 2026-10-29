@@ -1,13 +1,22 @@
 import os
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import cv2
-from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
 from PIL import Image, ImageTk
+
+# Importação compatível com qualquer versão do moviepy
+try:
+    from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
+except ImportError:
+    try:
+        from moviepy.tools import ffmpeg_extract_subclip
+    except ImportError:
+        ffmpeg_extract_subclip = None
 
 
 class CustomTrimBar(tk.Canvas):
-    """Barra superior com dois marcadores deslizantes (Início e Fim)."""
+    """Barra superior com dois marcadores deslizantes."""
 
     def __init__(self, parent, on_change_callback=None, **kwargs):
         super().__init__(
@@ -46,24 +55,20 @@ class CustomTrimBar(tk.Canvas):
         track_w = w - (2 * pad)
         cy = h // 2
 
-        # Trilho de fundo (escuro)
         self.create_rectangle(
             pad, cy - 6, w - pad, cy + 6, fill="#3f3f3f", outline=""
         )
 
-        # Região recortada / selecionada
         x1 = pad + int(self.start_ratio * track_w)
         x2 = pad + int(self.end_ratio * track_w)
         self.create_rectangle(x1, cy - 6, x2, cy + 6, fill="#525252", outline="")
 
-        # Marcador Esquerdo (Início)
         self.create_rectangle(
             x1 - 8, 4, x1 + 8, h - 4, fill="#f3f4f6", outline="#9ca3af", width=1
         )
         self.create_line(x1 - 2, 9, x1 - 2, h - 9, fill="#6b7280")
         self.create_line(x1 + 2, 9, x1 + 2, h - 9, fill="#6b7280")
 
-        # Marcador Direito (Fim)
         self.create_rectangle(
             x2 - 8, 4, x2 + 8, h - 4, fill="#f3f4f6", outline="#9ca3af", width=1
         )
@@ -136,7 +141,6 @@ class VideoTrimmerApp:
         return f"{h:02d}:{m:02d}:{sec:02d}"
 
     def setup_ui(self):
-        # Topo: Botão de Selecionar Arquivo
         bar_top = tk.Frame(self.root, bg="#1c1c1c", pady=4)
         bar_top.pack(fill=tk.X, padx=12)
 
@@ -156,13 +160,11 @@ class VideoTrimmerApp:
         )
         btn_select.pack(side=tk.LEFT)
 
-        # 1. Barra de Tesoura / Marcador Duplo Superior
         self.trim_bar = CustomTrimBar(
             self.root, on_change_callback=self.on_trim_slider_change
         )
         self.trim_bar.pack(fill=tk.X, padx=14, pady=(6, 0))
 
-        # Labels de tempo inicial e final (abaixo dos seletores)
         lbl_box = tk.Frame(self.root, bg="#1c1c1c")
         lbl_box.pack(fill=tk.X, padx=18, pady=(2, 6))
 
@@ -184,7 +186,6 @@ class VideoTrimmerApp:
         )
         self.lbl_end.pack(side=tk.RIGHT)
 
-        # 2. Área Central de Vídeo
         self.video_frame = tk.Frame(self.root, bg="#000000")
         self.video_frame.pack(fill=tk.BOTH, expand=True, padx=14)
 
@@ -193,7 +194,6 @@ class VideoTrimmerApp:
         )
         self.canvas_video.pack(fill=tk.BOTH, expand=True)
 
-        # 3. Barra de Navegação do Player
         player_nav = tk.Frame(self.root, bg="#262626")
         player_nav.pack(fill=tk.X, padx=14, pady=(6, 0))
 
@@ -213,11 +213,9 @@ class VideoTrimmerApp:
         )
         self.slider_play.pack(fill=tk.X, padx=10, pady=3)
 
-        # 4. Barra de Controles Escura
         ctrl_bar = tk.Frame(self.root, bg="#363636", height=42)
         ctrl_bar.pack(fill=tk.X, padx=14, pady=(0, 8))
 
-        # Botão Play / Pause
         self.btn_play = tk.Button(
             ctrl_bar,
             text="▶",
@@ -233,7 +231,6 @@ class VideoTrimmerApp:
         )
         self.btn_play.pack(side=tk.LEFT, padx=(6, 2), pady=4)
 
-        # Botão Testar Seleção
         self.btn_preview_sel = tk.Button(
             ctrl_bar,
             text="✂ Testar Recorte",
@@ -249,7 +246,6 @@ class VideoTrimmerApp:
         )
         self.btn_preview_sel.pack(side=tk.LEFT, padx=6)
 
-        # Relógio Atual / Duração Total
         self.lbl_clock = tk.Label(
             ctrl_bar,
             text="00:00:00 / 00:00:00",
@@ -259,10 +255,10 @@ class VideoTrimmerApp:
         )
         self.lbl_clock.pack(side=tk.LEFT, padx=12)
 
-        # 5. Barra Inferior (Cancelar e Confirmar)
         footer = tk.Frame(self.root, bg="#1c1c1c", height=54)
         footer.pack(fill=tk.X, side=tk.BOTTOM)
 
+        # Corrigido: destroy sem parênteses na chamada para não fechar logo ao arrancar
         self.btn_cancel = tk.Button(
             footer,
             text="Cancelar",
@@ -273,7 +269,7 @@ class VideoTrimmerApp:
             relief="flat",
             font=("Segoe UI", 11, "bold"),
             cursor="hand2",
-            command=self.root.quit,
+            command=self.fechar_aplicacao,
         )
         self.btn_cancel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -290,6 +286,11 @@ class VideoTrimmerApp:
             command=self.salvar_recorte,
         )
         self.btn_confirm.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+    def fechar_aplicacao(self):
+        if self.cap:
+            self.cap.release()
+        self.root.destroy()
 
     def on_trim_slider_change(self, inicio, fim):
         self.start_sec = inicio
@@ -366,7 +367,6 @@ class VideoTrimmerApp:
             self.loop_video()
 
     def play_selecao(self):
-        """Pula para o marcador de início e toca até o final da seleção."""
         if not self.cap:
             return
         self.current_frame = int(self.start_sec * self.fps)
@@ -381,8 +381,6 @@ class VideoTrimmerApp:
             return
 
         self.current_frame += 1
-
-        # Limite da seleção ou do arquivo
         limite = (
             int(self.end_sec * self.fps) if preview_mode else self.total_frames
         )
@@ -421,24 +419,39 @@ class VideoTrimmerApp:
             self.alternar_play()
 
         saida = self.gerar_caminho_saida()
-        self.btn_confirm.config(text="Salvando...", state=tk.DISABLED)
+        self.btn_confirm.config(text="A guardar...", state=tk.DISABLED)
         self.root.update()
 
         try:
-            ffmpeg_extract_subclip(
-                self.video_path, self.start_sec, self.end_sec, targetname=saida
-            )
+            try:
+                ffmpeg_extract_subclip(
+                    self.video_path, self.start_sec, self.end_sec, saida
+                )
+            except TypeError:
+                ffmpeg_extract_subclip(
+                    self.video_path,
+                    self.start_sec,
+                    self.end_sec,
+                    outputfile=saida,
+                )
+
             messagebox.showinfo(
                 "Concluído",
-                f"Recorte salvo com sucesso!\n\nArquivo:\n{os.path.basename(saida)}",
+                f"Recorte guardado com sucesso!\n\nFicheiro:\n{os.path.basename(saida)}",
             )
         except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao realizar recorte:\n{e}")
+            messagebox.showerror(
+                "Erro", f"Falha ao realizar recorte:\n{e}"
+            )  #[cite: 3]
         finally:
             self.btn_confirm.config(text="Confirmar", state=tk.NORMAL)
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = VideoTrimmerApp(root)
-    root.mainloop()
+    try:
+        root = tk.Tk()
+        app = VideoTrimmerApp(root)
+        root.mainloop()
+    except Exception as err:
+        print(f"Erro detetado: {err}")
+        input("Pressione Enter para sair...")

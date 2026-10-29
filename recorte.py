@@ -5,7 +5,6 @@ from tkinter import filedialog, messagebox
 import cv2
 from PIL import Image, ImageTk
 
-# Importação compatível com qualquer versão do moviepy
 try:
     from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
 except ImportError:
@@ -16,7 +15,7 @@ except ImportError:
 
 
 class CustomTrimBar(tk.Canvas):
-    """Barra superior com dois marcadores deslizantes."""
+    """Barra superior com dois marcadores deslizantes (2) que atualizam o vídeo em tempo real."""
 
     def __init__(self, parent, on_change_callback=None, **kwargs):
         super().__init__(
@@ -55,20 +54,24 @@ class CustomTrimBar(tk.Canvas):
         track_w = w - (2 * pad)
         cy = h // 2
 
+        # Trilho de fundo (escuro)
         self.create_rectangle(
             pad, cy - 6, w - pad, cy + 6, fill="#3f3f3f", outline=""
         )
 
+        # Região selecionada (corte ativo)
         x1 = pad + int(self.start_ratio * track_w)
         x2 = pad + int(self.end_ratio * track_w)
         self.create_rectangle(x1, cy - 6, x2, cy + 6, fill="#525252", outline="")
 
+        # Marcador Esquerdo (Início)
         self.create_rectangle(
             x1 - 8, 4, x1 + 8, h - 4, fill="#f3f4f6", outline="#9ca3af", width=1
         )
         self.create_line(x1 - 2, 9, x1 - 2, h - 9, fill="#6b7280")
         self.create_line(x1 + 2, 9, x1 + 2, h - 9, fill="#6b7280")
 
+        # Marcador Direito (Fim)
         self.create_rectangle(
             x2 - 8, 4, x2 + 8, h - 4, fill="#f3f4f6", outline="#9ca3af", width=1
         )
@@ -95,6 +98,8 @@ class CustomTrimBar(tk.Canvas):
 
     def on_drag(self, event):
         ratio = self.get_pos_ratio(event.x)
+        changed_which = self.active_drag
+
         if self.active_drag == "start":
             self.start_ratio = min(ratio, self.end_ratio - 0.005)
         elif self.active_drag == "end":
@@ -105,6 +110,7 @@ class CustomTrimBar(tk.Canvas):
             self.on_change(
                 self.start_ratio * self.total_duration,
                 self.end_ratio * self.total_duration,
+                changed_which,
             )
 
     def on_release(self, event):
@@ -141,6 +147,7 @@ class VideoTrimmerApp:
         return f"{h:02d}:{m:02d}:{sec:02d}"
 
     def setup_ui(self):
+        # Topo: Abrir Vídeo
         bar_top = tk.Frame(self.root, bg="#1c1c1c", pady=4)
         bar_top.pack(fill=tk.X, padx=12)
 
@@ -160,6 +167,7 @@ class VideoTrimmerApp:
         )
         btn_select.pack(side=tk.LEFT)
 
+        # 2. Barra de Recorte com Marcadores (Topo)
         self.trim_bar = CustomTrimBar(
             self.root, on_change_callback=self.on_trim_slider_change
         )
@@ -186,6 +194,7 @@ class VideoTrimmerApp:
         )
         self.lbl_end.pack(side=tk.RIGHT)
 
+        # Tela Central de Exibição
         self.video_frame = tk.Frame(self.root, bg="#000000")
         self.video_frame.pack(fill=tk.BOTH, expand=True, padx=14)
 
@@ -194,6 +203,7 @@ class VideoTrimmerApp:
         )
         self.canvas_video.pack(fill=tk.BOTH, expand=True)
 
+        # 1. Barra de Rolagem de Reprodução (Inferior)
         player_nav = tk.Frame(self.root, bg="#262626")
         player_nav.pack(fill=tk.X, padx=14, pady=(6, 0))
 
@@ -213,6 +223,7 @@ class VideoTrimmerApp:
         )
         self.slider_play.pack(fill=tk.X, padx=10, pady=3)
 
+        # Barra de Controles Escura
         ctrl_bar = tk.Frame(self.root, bg="#363636", height=42)
         ctrl_bar.pack(fill=tk.X, padx=14, pady=(0, 8))
 
@@ -229,22 +240,7 @@ class VideoTrimmerApp:
             cursor="hand2",
             command=self.alternar_play,
         )
-        self.btn_play.pack(side=tk.LEFT, padx=(6, 2), pady=4)
-
-        self.btn_preview_sel = tk.Button(
-            ctrl_bar,
-            text="✂ Testar Recorte",
-            bg="#444444",
-            fg="#ffffff",
-            activebackground="#555555",
-            activeforeground="#ffffff",
-            relief="flat",
-            font=("Segoe UI", 9),
-            padx=8,
-            cursor="hand2",
-            command=self.play_selecao,
-        )
-        self.btn_preview_sel.pack(side=tk.LEFT, padx=6)
+        self.btn_play.pack(side=tk.LEFT, padx=(6, 8), pady=4)
 
         self.lbl_clock = tk.Label(
             ctrl_bar,
@@ -253,12 +249,12 @@ class VideoTrimmerApp:
             fg="#e5e7eb",
             font=("Consolas", 10),
         )
-        self.lbl_clock.pack(side=tk.LEFT, padx=12)
+        self.lbl_clock.pack(side=tk.LEFT, padx=6)
 
+        # Rodapé (Cancelar / Confirmar)
         footer = tk.Frame(self.root, bg="#1c1c1c", height=54)
         footer.pack(fill=tk.X, side=tk.BOTTOM)
 
-        # Corrigido: destroy sem parênteses na chamada para não fechar logo ao arrancar
         self.btn_cancel = tk.Button(
             footer,
             text="Cancelar",
@@ -292,11 +288,27 @@ class VideoTrimmerApp:
             self.cap.release()
         self.root.destroy()
 
-    def on_trim_slider_change(self, inicio, fim):
+    def on_trim_slider_change(self, inicio, fim, changed_which=None):
+        """Ao arrastar os marcadores de recorte 2, atualiza o vídeo ao vivo."""
         self.start_sec = inicio
         self.end_sec = fim
         self.lbl_start.config(text=self.formatar_tempo(inicio))
         self.lbl_end.config(text=self.formatar_tempo(fim))
+
+        if not self.cap:
+            return
+
+        # Pausa o vídeo se estiver tocando para exibir o frame exato do recorte
+        if self.is_playing:
+            self.alternar_play()
+
+        # Posiciona no início ou fim do corte dependendo do marcador que está sendo arrastado
+        target_sec = inicio if changed_which == "start" else fim
+        frame_alvo = min(int(target_sec * self.fps), max(self.total_frames - 1, 0))
+
+        self.current_frame = frame_alvo
+        self.slider_play.set(frame_alvo)
+        self.mostrar_frame(frame_alvo)
 
     def abrir_arquivo(self):
         caminho = filedialog.askopenfilename(
@@ -317,13 +329,15 @@ class VideoTrimmerApp:
         )
 
         self.trim_bar.set_duracao(self.duration_sec)
-        self.slider_play.config(to=self.total_frames)
+        self.slider_play.config(to=max(self.total_frames - 1, 0))
 
         self.start_sec = 0.0
         self.end_sec = self.duration_sec
         self.lbl_start.config(text=self.formatar_tempo(0))
         self.lbl_end.config(text=self.formatar_tempo(self.duration_sec))
 
+        self.current_frame = 0
+        self.slider_play.set(0)
         self.mostrar_frame(0)
 
     def mostrar_frame(self, frame_num):
@@ -356,45 +370,46 @@ class VideoTrimmerApp:
             )
 
     def on_scrub(self, val):
+        """Ao arrastar a barra de navegação 1, posiciona o vídeo livremente."""
         if not self.is_playing:
             self.current_frame = int(val)
             self.mostrar_frame(self.current_frame)
 
     def alternar_play(self):
-        self.is_playing = not self.is_playing
-        self.btn_play.config(text="⏸" if self.is_playing else "▶")
-        if self.is_playing:
-            self.loop_video()
-
-    def play_selecao(self):
+        """Toca ou pausa a reprodução respeitando os limites do recorte."""
         if not self.cap:
             return
-        self.current_frame = int(self.start_sec * self.fps)
-        self.slider_play.set(self.current_frame)
-        self.mostrar_frame(self.current_frame)
-        self.is_playing = True
-        self.btn_play.config(text="⏸")
-        self.loop_video(preview_mode=True)
+        self.is_playing = not self.is_playing
+        self.btn_play.config(text="⏸" if self.is_playing else "▶")
 
-    def loop_video(self, preview_mode=False):
+        if self.is_playing:
+            # Se a agulha estiver fora ou no fim do trecho cortado, reinicia do ponto de corte inicial
+            frame_fim = int(self.end_sec * self.fps)
+            frame_inicio = int(self.start_sec * self.fps)
+
+            if self.current_frame >= frame_fim or self.current_frame < frame_inicio:
+                self.current_frame = frame_inicio
+                self.slider_play.set(self.current_frame)
+                self.mostrar_frame(self.current_frame)
+
+            self.loop_video()
+
+    def loop_video(self):
         if not self.is_playing or not self.cap:
             return
 
         self.current_frame += 1
-        limite = (
-            int(self.end_sec * self.fps) if preview_mode else self.total_frames
-        )
+        frame_fim = int(self.end_sec * self.fps)
 
-        if self.current_frame >= limite:
+        # Pausa ao chegar no final do recorte
+        if self.current_frame >= frame_fim or self.current_frame >= self.total_frames:
             self.is_playing = False
             self.btn_play.config(text="▶")
             return
 
         self.slider_play.set(self.current_frame)
         self.mostrar_frame(self.current_frame)
-        self.root.after(
-            int(1000 / self.fps), lambda: self.loop_video(preview_mode)
-        )
+        self.root.after(int(1000 / self.fps), self.loop_video)
 
     def gerar_caminho_saida(self):
         pasta = os.path.dirname(self.video_path)
@@ -419,7 +434,7 @@ class VideoTrimmerApp:
             self.alternar_play()
 
         saida = self.gerar_caminho_saida()
-        self.btn_confirm.config(text="A guardar...", state=tk.DISABLED)
+        self.btn_confirm.config(text="Salvando...", state=tk.DISABLED)
         self.root.update()
 
         try:
@@ -437,7 +452,7 @@ class VideoTrimmerApp:
 
             messagebox.showinfo(
                 "Concluído",
-                f"Recorte guardado com sucesso!\n\nFicheiro:\n{os.path.basename(saida)}",
+                f"Recorte salvo com sucesso!\n\nArquivo:\n{os.path.basename(saida)}",
             )
         except Exception as e:
             messagebox.showerror(
@@ -453,5 +468,5 @@ if __name__ == "__main__":
         app = VideoTrimmerApp(root)
         root.mainloop()
     except Exception as err:
-        print(f"Erro detetado: {err}")
+        print(f"Erro detectado: {err}")
         input("Pressione Enter para sair...")
